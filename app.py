@@ -90,6 +90,10 @@ def build_knowledge_base(_embeddings):
         documents = []
         
         with st.status("Building knowledge base..."):
+            # Создаем папку заранее
+            os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
+            
+            # Загрузка документов
             for url in URLS:
                 try:
                     loader = WebBaseLoader(url)
@@ -98,28 +102,51 @@ def build_knowledge_base(_embeddings):
                     st.write(f"✓ Loaded {url}")
                 except Exception as e:
                     st.error(f"Failed to load {url}: {str(e)}")
+                    continue  # Продолжаем при ошибках загрузки
 
+            if not documents:
+                st.error("No documents loaded!")
+                return None
+
+            # Разделение на чанки
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=500,
                 chunk_overlap=100
             )
             chunks = text_splitter.split_documents(documents)
             
+            # Явное сохранение
             vector_store = FAISS.from_documents(chunks, _embeddings)
-            vector_store.save_local(VECTOR_STORE_PATH)
+            vector_store.save_local(
+                folder_path=VECTOR_STORE_PATH,
+                index_name="index"
+            )
             
-            # Update knowledge base info
+            # Проверка создания файлов
+            if not os.path.exists(os.path.join(VECTOR_STORE_PATH, "index.faiss")):
+                raise RuntimeError("FAISS index file not created!")
+                
+            # Обновление информации
             st.session_state.kb_info.update({
                 'build_time': time.time() - start_time,
-                'size': sum(os.path.getsize(f) for f in os.listdir(VECTOR_STORE_PATH)) / (1024 ** 2),
+                'size': sum(
+                    os.path.getsize(os.path.join(VECTOR_STORE_PATH, f)) 
+                    for f in ["index.faiss", "index.pkl"]
+                ) / (1024 ** 2),
                 'version': datetime.now().strftime("%Y%m%d-%H%M%S")
             })
             
-        return vector_store
+            st.success("Knowledge base successfully created!")
+            return vector_store
+            
     except Exception as e:
         st.error(f"Knowledge base creation failed: {str(e)}")
+        # Отладочная информация
+        st.write("Debug info:")
+        st.write(f"Documents loaded: {len(documents)}")
+        st.write(f"Chunks created: {len(chunks) if 'chunks' in locals() else 0}")
+        st.write(f"Vector store path exists: {os.path.exists(VECTOR_STORE_PATH)}")
         st.stop()
-
 # --------------- Main Application ---------------
 def main():
     # Initialize session state first
