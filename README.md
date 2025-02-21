@@ -1,10 +1,10 @@
 ---
-title: LS Chatbot Log
-emoji: 🌍
-colorFrom: blue
-colorTo: blue
+title: 'Doc LS Chatbot '
+emoji: 🔥
+colorFrom: yellow
+colorTo: yellow
 sdk: streamlit
-sdk_version: 1.42.0
+sdk_version: 1.42.2
 app_file: app.py
 pinned: false
 short_description: It is a chat built with an AI model about www.Status.law
