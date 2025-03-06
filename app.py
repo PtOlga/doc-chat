@@ -6,6 +6,14 @@ import traceback
 import warnings
 from datetime import datetime
 from typing import Optional, List, Dict
+import logging
+
+# Настройка логгера
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 import requests
 from bs4 import BeautifulSoup
@@ -31,6 +39,24 @@ load_dotenv()
 
 # Initialize FastAPI app
 app = FastAPI(title="Status Law Assistant API")
+
+# Конфигурация базы знаний
+KB_CONFIG_PATH = "vector_store/kb_config.json"
+
+def get_kb_config():
+    if os.path.exists(KB_CONFIG_PATH):
+        with open(KB_CONFIG_PATH, 'r') as f:
+            return json.load(f)
+    return {
+        "version": 1,
+        "processed_urls": [],
+        "last_update": None
+    }
+
+def save_kb_config(config):
+    os.makedirs(os.path.dirname(KB_CONFIG_PATH), exist_ok=True)
+    with open(KB_CONFIG_PATH, 'w') as f:
+        json.dump(config, f)
 
 # Models for request/response
 class ChatRequest(BaseModel):
@@ -144,70 +170,105 @@ def load_url_content(url: str) -> List[Document]:
 
 def build_knowledge_base(embeddings):
     try:
+        logger.info("Starting knowledge base construction...")
+        kb_config = get_kb_config()
         documents = []
         os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
         
-        print("Starting to load documents...")
+        # Определяем URL для обработки
+        urls_to_process = [url for url in URLS if url not in kb_config["processed_urls"]]
         
-        # First check which URLs are available
-        available_urls = [url for url in URLS if check_url_availability(url)]
-        print(f"\nAccessible URLs: {len(available_urls)} out of {len(URLS)}")
+        if not urls_to_process:
+            logger.info("No new URLs to process")
+            return FAISS.load_local(VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True)
+            
+        logger.info(f"Processing {len(urls_to_process)} new URLs")
         
-        # Load content from available URLs
+        available_urls = [url for url in urls_to_process if check_url_availability(url)]
+        logger.info(f"Accessible URLs: {len(available_urls)} out of {len(urls_to_process)}")
+        
         for url in available_urls:
             try:
-                print(f"\nProcessing {url}")
+                logger.info(f"Processing {url}")
                 docs = load_url_content(url)
                 if docs:
                     documents.extend(docs)
-                    print(f"Successfully loaded content from {url}")
+                    kb_config["processed_urls"].append(url)
+                    logger.info(f"Successfully loaded content from {url}")
                 else:
-                    print(f"No content extracted from {url}")
+                    logger.warning(f"No content extracted from {url}")
             except Exception as e:
-                print(f"Failed to process {url}: {str(e)}")
+                logger.error(f"Failed to process {url}: {str(e)}")
                 continue
 
         if not documents:
+            if kb_config["processed_urls"]:
+                logger.info("No new documents to add, loading existing vector store")
+                return FAISS.load_local(VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True)
             raise Exception("No documents were successfully loaded!")
 
-        print(f"\nTotal documents loaded: {len(documents)}")
+        logger.info(f"Total new documents loaded: {len(documents)}")
         
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=100
+            chunk_size=1000,
+            chunk_overlap=50
         )
-        print("Splitting documents into chunks...")
+        logger.info("Splitting documents into chunks...")
         chunks = text_splitter.split_documents(documents)
-        print(f"Created {len(chunks)} chunks")
+        logger.info(f"Created {len(chunks)} chunks")
         
-        print("Creating vector store...")
-        vector_store = FAISS.from_documents(chunks, embeddings)
+        # Если есть существующая база знаний, добавляем к ней
+        if os.path.exists(os.path.join(VECTOR_STORE_PATH, "index.faiss")):
+            logger.info("Loading existing vector store...")
+            vector_store = FAISS.load_local(VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True)
+            logger.info("Adding new documents to existing vector store...")
+            vector_store.add_documents(chunks)
+        else:
+            logger.info("Creating new vector store...")
+            vector_store = FAISS.from_documents(chunks, embeddings)
         
-        print("Saving vector store...")
+        logger.info("Saving vector store...")
         vector_store.save_local(folder_path=VECTOR_STORE_PATH, index_name="index")
         
+        # Обновляем конфигурацию
+        kb_config["version"] += 1
+        kb_config["last_update"] = datetime.now().isoformat()
+        save_kb_config(kb_config)
+        
+        logger.info(f"Knowledge base updated to version {kb_config['version']}")
         return vector_store
+        
     except Exception as e:
-        print(f"Error in build_knowledge_base: {str(e)}")
+        logger.error(f"Error in build_knowledge_base: {str(e)}")
         traceback.print_exc()
         raise Exception(f"Knowledge base creation failed: {str(e)}")
 
 # Initialize models and knowledge base on startup
-llm, embeddings = init_models()
-vector_store = None
+try:
+    llm, embeddings = init_models()
+    vector_store = None
 
-if os.path.exists(VECTOR_STORE_PATH):
-    try:
-        vector_store = FAISS.load_local(
-            VECTOR_STORE_PATH,
-            embeddings,
-            allow_dangerous_deserialization=True
-        )
-    except Exception as e:
-        print(f"Failed to load existing knowledge base: {str(e)}")
+    if os.path.exists(VECTOR_STORE_PATH):
+        try:
+            vector_store = FAISS.load_local(
+                VECTOR_STORE_PATH,
+                embeddings,
+                allow_dangerous_deserialization=True
+            )
+            logger.info("Successfully loaded existing knowledge base")
+        except Exception as e:
+            logger.error(f"Failed to load existing knowledge base: {str(e)}")
+            logger.error(traceback.format_exc())
 
-if vector_store is None:
-    vector_store = build_knowledge_base(embeddings)
+    if vector_store is None:
+        logger.info("Building new knowledge base...")
+        vector_store = build_knowledge_base(embeddings)
+        logger.info("Knowledge base built successfully")
+
+except Exception as e:
+    logger.error(f"Critical initialization error: {str(e)}")
+    logger.error(traceback.format_exc())
+    raise
 
 # API endpoints
 # API endpoints
@@ -260,14 +321,27 @@ async def rebuild_knowledge_base():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/kb-status")
+async def get_kb_status():
+    """Get current knowledge base status"""
+    kb_config = get_kb_config()
+    return {
+        "version": kb_config["version"],
+        "total_urls": len(URLS),
+        "processed_urls": len(kb_config["processed_urls"]),
+        "pending_urls": len([url for url in URLS if url not in kb_config["processed_urls"]]),
+        "last_update": kb_config["last_update"]
+    }
+
 def log_interaction(user_input: str, bot_response: str, context: str):
     try:
+        kb_config = get_kb_config()
         log_entry = {
             "timestamp": datetime.now().isoformat(),
             "user_input": user_input,
             "bot_response": bot_response,
             "context": context[:500],
-            "kb_version": "1.1"  # You might want to implement version tracking
+            "kb_version": kb_config["version"]  # Используем актуальную версию
         }
         
         os.makedirs("chat_history", exist_ok=True)
@@ -275,8 +349,8 @@ def log_interaction(user_input: str, bot_response: str, context: str):
             f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
             
     except Exception as e:
-        print(f"Logging error: {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"Logging error: {str(e)}")
+        logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     import uvicorn
