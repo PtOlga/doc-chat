@@ -248,7 +248,7 @@ try:
     llm, embeddings = init_models()
     vector_store = None
 
-    if os.path.exists(VECTOR_STORE_PATH):
+    if os.path.exists(os.path.join(VECTOR_STORE_PATH, "index.faiss")):
         try:
             vector_store = FAISS.load_local(
                 VECTOR_STORE_PATH,
@@ -257,8 +257,10 @@ try:
             )
             logger.info("Successfully loaded existing knowledge base")
         except Exception as e:
-            logger.error(f"Failed to load existing knowledge base: {str(e)}")
-            logger.error(traceback.format_exc())
+            logger.warning(f"Could not load existing knowledge base, will create new one: {str(e)}")
+            vector_store = None
+    else:
+        logger.info("No existing knowledge base found, will create new one")
 
     if vector_store is None:
         logger.info("Building new knowledge base...")
