@@ -36,6 +36,19 @@ warnings.filterwarnings('ignore')
 # Initialize environment variables
 load_dotenv()
 
+# Проверяем наличие и права доступа к директориям кэша
+cache_dir = "/app/.cache"
+if not os.path.exists(cache_dir):
+    os.makedirs(cache_dir, exist_ok=True)
+    os.chmod(cache_dir, 0o777)
+
+hf_cache_dir = os.path.join(cache_dir, "huggingface")
+if not os.path.exists(hf_cache_dir):
+    os.makedirs(hf_cache_dir, exist_ok=True)
+    os.chmod(hf_cache_dir, 0o777)
+
+logger.info(f"Cache directories initialized: {cache_dir}, {hf_cache_dir}")
+
 # Initialize FastAPI app
 app = FastAPI(title="Status Law Assistant API")
 
@@ -102,6 +115,9 @@ class CustomCallbackHandler(ConsoleCallbackHandler):
             json.dump(log_entry, f, ensure_ascii=False)
             f.write("\n")
 
+# В начале файла добавим константу с именем модели
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+
 def init_models():
     try:
         callback_handler = CustomCallbackHandler()
@@ -114,13 +130,12 @@ def init_models():
             callback_manager=callback_manager
         )
         
-        # Используем модель с корректным идентификатором
         embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-            cache_folder="/app/.cache"
+            model_name=EMBEDDING_MODEL,  # Используем константу
+            cache_folder="/app/.cache/huggingface"  # Явно указываем путь к кэшу
         )
         
-        logger.info("Models initialized successfully")
+        logger.info(f"Models initialized successfully. Using embedding model: {EMBEDDING_MODEL}")
         return llm, embeddings
         
     except Exception as e:
