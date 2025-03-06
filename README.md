@@ -3,7 +3,7 @@ title: 'Doc LS Chatbot '
 emoji: 🔥
 colorFrom: yellow
 colorTo: yellow
-sdk: Docker
+sdk: docker
 sdk_version: 1.42.2
 app_file: app.py
 pinned: false
