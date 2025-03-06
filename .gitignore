@@ -4,3 +4,4 @@
 venv
 .streamlit/secrets.toml
 
+stop_space.py
