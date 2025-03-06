@@ -4,5 +4,3 @@
 venv
 .streamlit/secrets.toml
 
-stop_space.py
-colab_request.py
