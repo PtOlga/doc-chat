@@ -1,9 +1,10 @@
 import os
-import time
 import sys
 import json
 import traceback
 import warnings
+import asyncio
+import aiohttp
 from datetime import datetime
 from typing import Optional, List, Dict
 import logging
@@ -15,16 +16,14 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import WebBaseLoader, BSHTMLLoader
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.tracers import ConsoleCallbackHandler
@@ -42,6 +41,8 @@ app = FastAPI(title="Status Law Assistant API")
 
 # Конфигурация базы знаний
 KB_CONFIG_PATH = "vector_store/kb_config.json"
+CACHE_DIR = "cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 def get_kb_config():
     if os.path.exists(KB_CONFIG_PATH):
@@ -84,21 +85,6 @@ URLS = [
     "https://status.law/faq"
 ]
 
-# Check write permissions
-try:
-    if not os.path.exists(VECTOR_STORE_PATH):
-        os.makedirs(VECTOR_STORE_PATH)
-    test_file_path = os.path.join(VECTOR_STORE_PATH, 'test_write.txt')
-    with open(test_file_path, 'w') as f:
-        f.write('test')
-    os.remove(test_file_path)
-    print(f"Write permissions OK for {VECTOR_STORE_PATH}")
-except Exception as e:
-    print(f"WARNING: No write permissions for {VECTOR_STORE_PATH}: {str(e)}")
-    print("Current working directory:", os.getcwd())
-    print("User:", os.getenv('USER'))
-    sys.exit(1)
-
 # Enhanced logging
 class CustomCallbackHandler(ConsoleCallbackHandler):
     def on_chain_end(self, run):
@@ -127,56 +113,96 @@ def init_models():
             api_key=os.getenv("GROQ_API_KEY"),
             callback_manager=callback_manager
         )
+        # Используем smaller модель для эмбеддингов
         embeddings = HuggingFaceEmbeddings(
-            model_name="intfloat/multilingual-e5-large-instruct"
+            model_name="intfloat/multilingual-e5-small-instruct"
         )
         return llm, embeddings
     except Exception as e:
         raise Exception(f"Model initialization failed: {str(e)}")
 
-def check_url_availability(url: str) -> bool:
+async def fetch_url(session, url):
+    cache_file = os.path.join(CACHE_DIR, f"{url.replace('/', '_').replace(':', '_')}.html")
+    
+    # Проверяем кэш
+    if os.path.exists(cache_file):
+        with open(cache_file, 'r', encoding='utf-8') as f:
+            return url, f.read()
+    
     try:
-        response = requests.get(url, verify=False, timeout=10)
-        return response.status_code == 200
+        async with session.get(url, ssl=False, timeout=30) as response:
+            if response.status == 200:
+                content = await response.text()
+                # Сохраняем в кэш
+                with open(cache_file, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                return url, content
+            else:
+                logger.warning(f"Failed to load {url}, status code: {response.status}")
+                return url, None
     except Exception as e:
-        print(f"Error checking {url}: {str(e)}")
-        return False
+        logger.error(f"Error fetching {url}: {str(e)}")
+        return url, None
 
-def load_url_content(url: str) -> List[Document]:
-    try:
-        response = requests.get(url, verify=False, timeout=30)
-        if response.status_code != 200:
-            print(f"Failed to load {url}, status code: {response.status_code}")
-            return []
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
+def process_html_content(url, html_content):
+    if not html_content:
+        return None
         
-        # Remove script and style elements
-        for script in soup(["script", "style"]):
-            script.decompose()
-            
-        # Get text content
-        text = soup.get_text()
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # Remove script and style elements
+    for script in soup(["script", "style"]):
+        script.decompose()
         
-        # Clean up text
-        lines = (line.strip() for line in text.splitlines())
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        text = ' '.join(chunk for chunk in chunks if chunk)
+    # Get text content
+    text = soup.get_text()
+    
+    # Clean up text
+    lines = (line.strip() for line in text.splitlines())
+    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+    text = ' '.join(chunk for chunk in chunks if chunk)
+    
+    if not text.strip():
+        return None
         
-        return [Document(page_content=text, metadata={"source": url})]
-    except Exception as e:
-        print(f"Error processing {url}: {str(e)}")
-        return []
+    return Document(page_content=text, metadata={"source": url})
 
-def build_knowledge_base(embeddings):
+async def load_all_urls(urls_to_process):
+    documents = []
+    
+    async with aiohttp.ClientSession() as session:
+        tasks = [fetch_url(session, url) for url in urls_to_process]
+        results = await asyncio.gather(*tasks)
+        
+    for url, content in results:
+        if content:
+            doc = process_html_content(url, content)
+            if doc:
+                documents.append(doc)
+                logger.info(f"Successfully processed content from {url}")
+            else:
+                logger.warning(f"No useful content extracted from {url}")
+        else:
+            logger.warning(f"Failed to load content from {url}")
+            
+    return documents
+
+async def build_knowledge_base_async(embeddings, force_rebuild=False):
+    """
+    Асинхронное построение базы знаний.
+    Параметр force_rebuild позволяет принудительно обновить все URL.
+    """
     try:
         logger.info("Starting knowledge base construction...")
         kb_config = get_kb_config()
-        documents = []
-        os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
         
         # Определяем URL для обработки
-        urls_to_process = [url for url in URLS if url not in kb_config["processed_urls"]]
+        if force_rebuild:
+            urls_to_process = URLS
+            kb_config["processed_urls"] = []
+            logger.info("Forcing rebuild of entire knowledge base")
+        else:
+            urls_to_process = [url for url in URLS if url not in kb_config["processed_urls"]]
         
         if not urls_to_process:
             logger.info("No new URLs to process")
@@ -184,41 +210,27 @@ def build_knowledge_base(embeddings):
             
         logger.info(f"Processing {len(urls_to_process)} new URLs")
         
-        available_urls = [url for url in urls_to_process if check_url_availability(url)]
-        logger.info(f"Accessible URLs: {len(available_urls)} out of {len(urls_to_process)}")
-        
-        for url in available_urls:
-            try:
-                logger.info(f"Processing {url}")
-                docs = load_url_content(url)
-                if docs:
-                    documents.extend(docs)
-                    kb_config["processed_urls"].append(url)
-                    logger.info(f"Successfully loaded content from {url}")
-                else:
-                    logger.warning(f"No content extracted from {url}")
-            except Exception as e:
-                logger.error(f"Failed to process {url}: {str(e)}")
-                continue
+        documents = await load_all_urls(urls_to_process)
 
         if not documents:
-            if kb_config["processed_urls"]:
+            if kb_config["processed_urls"] and os.path.exists(os.path.join(VECTOR_STORE_PATH, "index.faiss")):
                 logger.info("No new documents to add, loading existing vector store")
                 return FAISS.load_local(VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True)
             raise Exception("No documents were successfully loaded!")
 
         logger.info(f"Total new documents loaded: {len(documents)}")
         
+        # Увеличиваем размер чанков
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=50
+            chunk_size=2500,  # Увеличенный размер чанка
+            chunk_overlap=100
         )
         logger.info("Splitting documents into chunks...")
         chunks = text_splitter.split_documents(documents)
         logger.info(f"Created {len(chunks)} chunks")
         
-        # Если есть существующая база знаний, добавляем к ней
-        if os.path.exists(os.path.join(VECTOR_STORE_PATH, "index.faiss")):
+        # Если есть существующая база знаний и мы не выполняем полное обновление, добавляем к ней
+        if not force_rebuild and os.path.exists(os.path.join(VECTOR_STORE_PATH, "index.faiss")):
             logger.info("Loading existing vector store...")
             vector_store = FAISS.load_local(VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True)
             logger.info("Adding new documents to existing vector store...")
@@ -231,6 +243,10 @@ def build_knowledge_base(embeddings):
         vector_store.save_local(folder_path=VECTOR_STORE_PATH, index_name="index")
         
         # Обновляем конфигурацию
+        for url in urls_to_process:
+            if url not in kb_config["processed_urls"]:
+                kb_config["processed_urls"].append(url)
+            
         kb_config["version"] += 1
         kb_config["last_update"] = datetime.now().isoformat()
         save_kb_config(kb_config)
@@ -244,10 +260,14 @@ def build_knowledge_base(embeddings):
         raise Exception(f"Knowledge base creation failed: {str(e)}")
 
 # Initialize models and knowledge base on startup
-try:
-    llm, embeddings = init_models()
-    vector_store = None
+llm, embeddings = init_models()
+vector_store = None
 
+@app.on_event("startup")
+async def startup_event():
+    global vector_store
+    
+    # Только загружаем существующую базу при старте, не создаем новую
     if os.path.exists(os.path.join(VECTOR_STORE_PATH, "index.faiss")):
         try:
             vector_store = FAISS.load_local(
@@ -257,28 +277,26 @@ try:
             )
             logger.info("Successfully loaded existing knowledge base")
         except Exception as e:
-            logger.warning(f"Could not load existing knowledge base, will create new one: {str(e)}")
+            logger.warning(f"Could not load existing knowledge base: {str(e)}")
             vector_store = None
     else:
-        logger.info("No existing knowledge base found, will create new one")
+        logger.warning("No existing knowledge base found, please use /rebuild-kb endpoint to create one")
 
-    if vector_store is None:
-        logger.info("Building new knowledge base...")
-        vector_store = build_knowledge_base(embeddings)
-        logger.info("Knowledge base built successfully")
-
-except Exception as e:
-    logger.error(f"Critical initialization error: {str(e)}")
-    logger.error(traceback.format_exc())
-    raise
-
-# API endpoints
 # API endpoints
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
+    global vector_store
+    
+    # Проверяем, инициализирована ли база знаний
+    if vector_store is None:
+        raise HTTPException(
+            status_code=503, 
+            detail="Knowledge base not initialized. Please use /rebuild-kb endpoint first."
+        )
+        
     try:
         # Retrieve context
-        context_docs = vector_store.similarity_search(request.message)
+        context_docs = vector_store.similarity_search(request.message, k=3)  # Ограничиваем количество документов
         context_text = "\n".join([d.page_content for d in context_docs])
         
         # Generate response
@@ -315,19 +333,39 @@ async def chat_endpoint(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/rebuild-kb")
-async def rebuild_knowledge_base():
+async def rebuild_knowledge_base(background_tasks: BackgroundTasks, force: bool = False):
+    """
+    Rebuild knowledge base in the background
+    
+    - force: если True, перестраивает всю базу знаний с нуля
+    """
+    global vector_store
+    
     try:
-        global vector_store
-        vector_store = build_knowledge_base(embeddings)
-        return {"status": "success", "message": "Knowledge base rebuilt successfully"}
+        # Запускаем в фоне
+        background_tasks.add_task(_rebuild_kb_task, force)
+        action = "rebuild" if force else "update"
+        return {"status": "success", "message": f"Knowledge base {action} started in background"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+async def _rebuild_kb_task(force: bool = False):
+    """Фоновая задача для обновления базы знаний"""
+    global vector_store
+    try:
+        vector_store = await build_knowledge_base_async(embeddings, force_rebuild=force)
+        logger.info("Knowledge base rebuild completed successfully")
+    except Exception as e:
+        logger.error(f"Knowledge base rebuild failed: {str(e)}")
 
 @app.get("/kb-status")
 async def get_kb_status():
     """Get current knowledge base status"""
+    global vector_store
+    
     kb_config = get_kb_config()
     return {
+        "initialized": vector_store is not None,
         "version": kb_config["version"],
         "total_urls": len(URLS),
         "processed_urls": len(kb_config["processed_urls"]),
