@@ -6,6 +6,7 @@ langchain-groq
 python-dotenv
 faiss-cpu
 requests
+beautifulsoup4
 
 # Для API и логирования
 fastapi
