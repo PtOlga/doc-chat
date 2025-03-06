@@ -1,23 +1,18 @@
-streamlit
+# Основные компоненты для работы с LLM и базой знаний
 langchain-community
 langchain-core
 langchain-huggingface
 langchain-groq
 python-dotenv
-beautifulsoup4
 faiss-cpu
 requests
-langgraph
-langchain-anthropic
+
+# Для API и логирования
 fastapi
 uvicorn[standard]
 pydantic
-python-multipart
 pandas
-langchain
-plotly
 
-
-
-
-
+# Для LangChain логирования
+langgraph
+langchain-core[tracing]
