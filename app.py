@@ -298,21 +298,30 @@ vector_store = None
 @app.on_event("startup")
 async def startup_event():
     global vector_store
-    
-    # Только загружаем существующую базу при старте, не создаем новую
-    if os.path.exists(os.path.join(VECTOR_STORE_PATH, "index.faiss")):
-        try:
-            vector_store = FAISS.load_local(
-                VECTOR_STORE_PATH,
-                embeddings,
-                allow_dangerous_deserialization=True
-            )
-            logger.info("Successfully loaded existing knowledge base")
-        except Exception as e:
-            logger.warning(f"Could not load existing knowledge base: {str(e)}")
-            vector_store = None
-    else:
-        logger.warning("No existing knowledge base found, please use /rebuild-kb endpoint to create one")
+    try:
+        # Намеренно вызываем ошибку деления на ноль для рестарта
+        1/0
+    except:
+        pass
+        
+    try:
+        # Сразу запускаем полную пересборку базы знаний
+        vector_store = await build_knowledge_base_async(embeddings, force_rebuild=True)
+        logger.info("Successfully rebuilt knowledge base on startup")
+    except Exception as e:
+        logger.error(f"Failed to rebuild knowledge base on startup: {str(e)}")
+        # Пробуем загрузить существующую базу как fallback
+        if os.path.exists(os.path.join(VECTOR_STORE_PATH, "index.faiss")):
+            try:
+                vector_store = FAISS.load_local(
+                    VECTOR_STORE_PATH,
+                    embeddings,
+                    allow_dangerous_deserialization=True
+                )
+                logger.info("Loaded existing knowledge base as fallback")
+            except Exception as load_error:
+                logger.error(f"Could not load existing knowledge base: {str(load_error)}")
+                vector_store = None
 
 # API endpoints
 @app.post("/chat", response_model=ChatResponse)
