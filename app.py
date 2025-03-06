@@ -1,5 +1,14 @@
 import os
 import time
+import sys
+import json
+import traceback
+import warnings
+from datetime import datetime
+from typing import Optional, List, Dict
+
+import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -7,15 +16,15 @@ from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import WebBaseLoader
+from langchain_community.document_loaders import WebBaseLoader, BSHTMLLoader
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from datetime import datetime
-import json
-import traceback
-from typing import Optional, List, Dict
 from langchain_core.tracers import ConsoleCallbackHandler
 from langchain_core.callbacks import CallbackManager
+from langchain_core.documents import Document
+
+# Ignore SSL warnings
+warnings.filterwarnings('ignore')
 
 # Initialize environment variables
 load_dotenv()
@@ -49,6 +58,21 @@ URLS = [
     "https://status.law/faq"
 ]
 
+# Check write permissions
+try:
+    if not os.path.exists(VECTOR_STORE_PATH):
+        os.makedirs(VECTOR_STORE_PATH)
+    test_file_path = os.path.join(VECTOR_STORE_PATH, 'test_write.txt')
+    with open(test_file_path, 'w') as f:
+        f.write('test')
+    os.remove(test_file_path)
+    print(f"Write permissions OK for {VECTOR_STORE_PATH}")
+except Exception as e:
+    print(f"WARNING: No write permissions for {VECTOR_STORE_PATH}: {str(e)}")
+    print("Current working directory:", os.getcwd())
+    print("User:", os.getenv('USER'))
+    sys.exit(1)
+
 # Enhanced logging
 class CustomCallbackHandler(ConsoleCallbackHandler):
     def on_chain_end(self, run):
@@ -66,7 +90,6 @@ class CustomCallbackHandler(ConsoleCallbackHandler):
             json.dump(log_entry, f, ensure_ascii=False)
             f.write("\n")
 
-# Initialize models
 def init_models():
     try:
         callback_handler = CustomCallbackHandler()
@@ -85,50 +108,88 @@ def init_models():
     except Exception as e:
         raise Exception(f"Model initialization failed: {str(e)}")
 
-# Knowledge base management
+def check_url_availability(url: str) -> bool:
+    try:
+        response = requests.get(url, verify=False, timeout=10)
+        return response.status_code == 200
+    except Exception as e:
+        print(f"Error checking {url}: {str(e)}")
+        return False
+
+def load_url_content(url: str) -> List[Document]:
+    try:
+        response = requests.get(url, verify=False, timeout=30)
+        if response.status_code != 200:
+            print(f"Failed to load {url}, status code: {response.status_code}")
+            return []
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Remove script and style elements
+        for script in soup(["script", "style"]):
+            script.decompose()
+            
+        # Get text content
+        text = soup.get_text()
+        
+        # Clean up text
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        text = ' '.join(chunk for chunk in chunks if chunk)
+        
+        return [Document(page_content=text, metadata={"source": url})]
+    except Exception as e:
+        print(f"Error processing {url}: {str(e)}")
+        return []
+
 def build_knowledge_base(embeddings):
     try:
         documents = []
         os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
         
-        print("Starting to load documents...")  # Debug log
+        print("Starting to load documents...")
         
-        for url in URLS:
+        # First check which URLs are available
+        available_urls = [url for url in URLS if check_url_availability(url)]
+        print(f"\nAccessible URLs: {len(available_urls)} out of {len(URLS)}")
+        
+        # Load content from available URLs
+        for url in available_urls:
             try:
-                print(f"Attempting to load {url}")  # Debug log
-                loader = WebBaseLoader(url)
-                docs = loader.load()
-                documents.extend(docs)
-                print(f"Successfully loaded {url}")  # Debug log
+                print(f"\nProcessing {url}")
+                docs = load_url_content(url)
+                if docs:
+                    documents.extend(docs)
+                    print(f"Successfully loaded content from {url}")
+                else:
+                    print(f"No content extracted from {url}")
             except Exception as e:
-                print(f"Failed to load {url}: {str(e)}")
-                traceback.print_exc()  # Print full traceback
+                print(f"Failed to process {url}: {str(e)}")
                 continue
 
         if not documents:
-            raise Exception("No documents loaded!")
+            raise Exception("No documents were successfully loaded!")
 
-        print(f"Total documents loaded: {len(documents)}")  # Debug log
-
+        print(f"\nTotal documents loaded: {len(documents)}")
+        
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=500,
             chunk_overlap=100
         )
-        print("Splitting documents into chunks...")  # Debug log
+        print("Splitting documents into chunks...")
         chunks = text_splitter.split_documents(documents)
-        print(f"Created {len(chunks)} chunks")  # Debug log
+        print(f"Created {len(chunks)} chunks")
         
-        print("Creating vector store...")  # Debug log
+        print("Creating vector store...")
         vector_store = FAISS.from_documents(chunks, embeddings)
         
-        print("Saving vector store...")  # Debug log
+        print("Saving vector store...")
         vector_store.save_local(folder_path=VECTOR_STORE_PATH, index_name="index")
         
-        print("Vector store successfully created and saved")  # Debug log
         return vector_store
     except Exception as e:
-        print("Error in build_knowledge_base:")  # Debug log
-        traceback.print_exc()  # Print full traceback
+        print(f"Error in build_knowledge_base: {str(e)}")
+        traceback.print_exc()
         raise Exception(f"Knowledge base creation failed: {str(e)}")
 
 # Initialize models and knowledge base on startup
@@ -148,6 +209,7 @@ if os.path.exists(VECTOR_STORE_PATH):
 if vector_store is None:
     vector_store = build_knowledge_base(embeddings)
 
+# API endpoints
 # API endpoints
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
