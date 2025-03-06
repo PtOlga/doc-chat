@@ -113,12 +113,19 @@ def init_models():
             api_key=os.getenv("GROQ_API_KEY"),
             callback_manager=callback_manager
         )
-        # Используем smaller модель для эмбеддингов
+        
+        # Используем модель с корректным идентификатором
         embeddings = HuggingFaceEmbeddings(
-            model_name="intfloat/multilingual-e5-small-instruct"
+            model_name="sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+            cache_folder="/app/.cache"
         )
+        
+        logger.info("Models initialized successfully")
         return llm, embeddings
+        
     except Exception as e:
+        logger.error(f"Model initialization error: {str(e)}")
+        logger.error(traceback.format_exc())
         raise Exception(f"Model initialization failed: {str(e)}")
 
 async def fetch_url(session, url):

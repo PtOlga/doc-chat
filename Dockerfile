@@ -13,10 +13,14 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir -p /app/vector_store /app/chat_history /app/.cache && \
     chmod 777 /app/vector_store /app/chat_history /app/.cache
 
-# Set environment variables
-ENV TRANSFORMERS_CACHE=/app/.cache
-ENV HF_HOME=/app/.cache
+# Set environment variables and cache directories
+ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
+ENV HF_HOME=/app/.cache/huggingface
 ENV XDG_CACHE_HOME=/app/.cache
+
+# Create cache directories with proper permissions
+RUN mkdir -p /app/.cache/huggingface && \
+    chmod -R 777 /app/.cache
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
