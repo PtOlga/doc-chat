@@ -9,9 +9,14 @@ RUN apt-get update && apt-get install -y \
     software-properties-common \
     && rm -rf /var/lib/apt/lists/*
 
-# Create directory for vector store and set permissions
-RUN mkdir -p /app/vector_store /app/chat_history && \
-    chmod 777 /app/vector_store /app/chat_history
+# Create directories and set permissions
+RUN mkdir -p /app/vector_store /app/chat_history /app/.cache && \
+    chmod 777 /app/vector_store /app/chat_history /app/.cache
+
+# Set environment variables
+ENV TRANSFORMERS_CACHE=/app/.cache
+ENV HF_HOME=/app/.cache
+ENV XDG_CACHE_HOME=/app/.cache
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
