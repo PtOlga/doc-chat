@@ -1,5 +1,3 @@
-this_will_crash = 1/0  # Деление на ноль вызовет исключение при запуске
-
 import os
 import sys
 import json
@@ -38,6 +36,12 @@ warnings.filterwarnings('ignore')
 # Initialize environment variables
 load_dotenv()
 
+# Проверяем наличие необходимых переменных окружения
+required_env_vars = ["GROQ_API_KEY"]
+missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+if missing_vars:
+    raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
 # Проверяем наличие и права доступа к директориям кэша
 cache_dir = "/app/.cache"
 if not os.path.exists(cache_dir):
@@ -54,9 +58,14 @@ logger.info(f"Cache directories initialized: {cache_dir}, {hf_cache_dir}")
 # Initialize FastAPI app
 app = FastAPI(title="Status Law Assistant API")
 
-# Конфигурация базы знаний
+# Константы
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+VECTOR_STORE_PATH = "vector_store"
 KB_CONFIG_PATH = "vector_store/kb_config.json"
 CACHE_DIR = "cache"
+
+# Создаем необходимые директории
+os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 def get_kb_config():
@@ -83,7 +92,6 @@ class ChatResponse(BaseModel):
     context: Optional[str] = None
 
 # Global variables
-VECTOR_STORE_PATH = "vector_store"
 URLS = [
     "https://status.law",
     "https://status.law/about",
@@ -117,14 +125,13 @@ class CustomCallbackHandler(ConsoleCallbackHandler):
             json.dump(log_entry, f, ensure_ascii=False)
             f.write("\n")
 
-# В начале файла добавим константу с именем модели
-EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-
 def init_models():
+    """Инициализация моделей с обработкой ошибок"""
     try:
         callback_handler = CustomCallbackHandler()
         callback_manager = CallbackManager([callback_handler])
         
+        # Инициализация LLM
         llm = ChatGroq(
             model_name="llama-3.3-70b-versatile",
             temperature=0.6,
@@ -132,12 +139,13 @@ def init_models():
             callback_manager=callback_manager
         )
         
+        # Инициализация embeddings с явным указанием кэша
         embeddings = HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL,  # Используем константу
-            cache_folder="/app/.cache/huggingface"  # Явно указываем путь к кэшу
+            model_name=EMBEDDING_MODEL,
+            cache_folder=hf_cache_dir
         )
         
-        logger.info(f"Models initialized successfully. Using embedding model: {EMBEDDING_MODEL}")
+        logger.info("Models initialized successfully")
         return llm, embeddings
         
     except Exception as e:
