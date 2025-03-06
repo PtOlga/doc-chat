@@ -91,29 +91,44 @@ def build_knowledge_base(embeddings):
         documents = []
         os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
         
+        print("Starting to load documents...")  # Debug log
+        
         for url in URLS:
             try:
+                print(f"Attempting to load {url}")  # Debug log
                 loader = WebBaseLoader(url)
                 docs = loader.load()
                 documents.extend(docs)
+                print(f"Successfully loaded {url}")  # Debug log
             except Exception as e:
                 print(f"Failed to load {url}: {str(e)}")
+                traceback.print_exc()  # Print full traceback
                 continue
 
         if not documents:
             raise Exception("No documents loaded!")
 
+        print(f"Total documents loaded: {len(documents)}")  # Debug log
+
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=500,
             chunk_overlap=100
         )
+        print("Splitting documents into chunks...")  # Debug log
         chunks = text_splitter.split_documents(documents)
+        print(f"Created {len(chunks)} chunks")  # Debug log
         
+        print("Creating vector store...")  # Debug log
         vector_store = FAISS.from_documents(chunks, embeddings)
+        
+        print("Saving vector store...")  # Debug log
         vector_store.save_local(folder_path=VECTOR_STORE_PATH, index_name="index")
         
+        print("Vector store successfully created and saved")  # Debug log
         return vector_store
     except Exception as e:
+        print("Error in build_knowledge_base:")  # Debug log
+        traceback.print_exc()  # Print full traceback
         raise Exception(f"Knowledge base creation failed: {str(e)}")
 
 # Initialize models and knowledge base on startup
