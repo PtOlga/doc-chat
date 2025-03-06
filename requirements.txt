@@ -1,4 +1,3 @@
-streamlit
 langchain-community
 langchain-core
 langchain-huggingface
@@ -16,8 +15,3 @@ python-multipart
 pandas
 langchain
 plotly
-
-
-
-
-
