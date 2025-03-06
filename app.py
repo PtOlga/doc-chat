@@ -1,3 +1,5 @@
+this_will_crash = 1/0  # Деление на ноль вызовет исключение при запуске
+
 import os
 import sys
 import json
