@@ -13,11 +13,14 @@ import json
 import traceback
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from api import router as analysis_router
+from utils import ChatAnalyzer, setup_chat_analysis
 
 # Initialize environment variables
 load_dotenv()
 
 app = FastAPI(title="Status Law Assistant API")
+app.include_router(analysis_router)
 
 # --------------- Model Initialization ---------------
 def init_models():

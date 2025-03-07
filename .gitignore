@@ -1,7 +1,30 @@
-/.streamlit
-*.env
+# Environment variables
 .env
-venv
-.streamlit/secrets.toml
+.env.*
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+vector_store/*
+!vector_store/.gitkeep
+chat_history/*
+!chat_history/.gitkeep
+.cache/
+*.log
+
+# Hugging Face Space
+.streamlit/
 stop_space.py

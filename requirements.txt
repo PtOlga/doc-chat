@@ -15,3 +15,6 @@ python-multipart
 pandas
 langchain
 plotly
+pytest
+httpx
+pytest-asyncio
