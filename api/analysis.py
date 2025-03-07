@@ -64,23 +64,51 @@ class LogAnalyzer:
 
     def generate_report(self) -> str:
         """Generate comprehensive analysis report"""
+        if not self.logs:
+            return "No logs available for analysis"
+            
         stats = self.get_basic_stats()
         temporal = self.temporal_analysis()
         
-        report = (
-            "Legal Assistant Usage Report\n"
-            "----------------------------\n"
-            f"Period: {self.logs[0]['timestamp']} - {self.logs[-1]['timestamp']}\n\n"
+        # Format top questions
+        top_questions = "\n".join(
+            f"- {q['question']}: {q['count']}" 
+            for q in stats['most_common_questions']
+        )
+        
+        # Build report sections separately
+        header = "Legal Assistant Usage Report\n----------------------------"
+        
+        period = (f"Period: {self.logs[0]['timestamp']} - {self.logs[-1]['timestamp']}")
+        
+        basic_stats = (
             f"Total Interactions: {stats['total_interactions']}\n"
             f"Unique Users: {stats['unique_users']}\n"
-            f"Average Response Length: {stats['avg_response_length']:.1f} chars\n\n"
-            "Top Questions:\n"
-            + "".join(f"- {q['question']}: {q['count']}\n" for q in stats['most_common_questions'])
-            + "\nKnowledge Base Usage:\n"
+            f"Average Response Length: {stats['avg_response_length']:.1f} chars"
+        )
+        
+        kb_usage = (
+            "Knowledge Base Usage:\n"
             f"- With context: {stats['knowledge_base_usage'].get('with_context', 0)}\n"
-            f"- Without context: {stats['knowledge_base_usage'].get('without_context', 0)}\n\n"
+            f"- Without context: {stats['knowledge_base_usage'].get('without_context', 0)}"
+        )
+        
+        patterns = (
             "Usage Patterns:\n"
             f"- Daily Activity: {temporal['daily_activity']}\n"
-            f"- Hourly Distribution: {temporal['hourly_pattern']}\n"
+            f"- Hourly Distribution: {temporal['hourly_pattern']}"
         )
-        return report
+        
+        # Combine all sections
+        report_sections = [
+            header,
+            period,
+            basic_stats,
+            "Top Questions:",
+            top_questions,
+            kb_usage,
+            patterns
+        ]
+        
+        # Join sections with double newlines
+        return "\n\n".join(report_sections)
