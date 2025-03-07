@@ -23,8 +23,41 @@ from typing import Union
 # Initialize environment variables
 load_dotenv()
 
+# Define constants for directory paths
+VECTOR_STORE_PATH = "vector_store"
+CHAT_HISTORY_PATH = "chat_history"
+
+def create_required_directories():
+    """Create required directories if they don't exist"""
+    directories = [VECTOR_STORE_PATH, CHAT_HISTORY_PATH]
+    for directory in directories:
+        try:
+            if not os.path.exists(directory):
+                os.makedirs(directory, exist_ok=True)
+                print(f"Created directory: {directory}")
+                
+                # Create .gitkeep file to preserve empty directory
+                gitkeep_path = os.path.join(directory, '.gitkeep')
+                with open(gitkeep_path, 'w') as f:
+                    pass
+        except Exception as e:
+            print(f"Error creating directory {directory}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create required directory: {directory}"
+            )
+
+# Create directories before initializing the app
+create_required_directories()
+
 app = FastAPI(title="Status Law Assistant API")
 app.include_router(analysis_router)
+
+# Add startup event handler to ensure directories exist
+@app.on_event("startup")
+async def startup_event():
+    """Ensure required directories exist on startup"""
+    create_required_directories()
 
 # Add custom exception handlers
 @app.exception_handler(requests.exceptions.RequestException)
@@ -66,7 +99,6 @@ def init_models():
         raise HTTPException(status_code=500, detail=f"Model initialization failed: {str(e)}")
 
 # --------------- Knowledge Base Management ---------------
-VECTOR_STORE_PATH = "vector_store"
 URLS = [
     "https://status.law",
     "https://status.law/about",
@@ -89,7 +121,9 @@ def build_knowledge_base(_embeddings):
         start_time = time.time()
         documents = []
         
-        os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
+        # Ensure vector store directory exists
+        if not os.path.exists(VECTOR_STORE_PATH):
+            os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
         
         for url in URLS:
             try:
@@ -253,6 +287,23 @@ async def health_check():
                 "error": str(e)
             }
         )
+
+# Add diagnostic endpoint
+@app.get("/directory-status")
+async def check_directory_status():
+    """Check status of required directories"""
+    return {
+        "vector_store": {
+            "exists": os.path.exists(VECTOR_STORE_PATH),
+            "path": os.path.abspath(VECTOR_STORE_PATH),
+            "contents": os.listdir(VECTOR_STORE_PATH) if os.path.exists(VECTOR_STORE_PATH) else []
+        },
+        "chat_history": {
+            "exists": os.path.exists(CHAT_HISTORY_PATH),
+            "path": os.path.abspath(CHAT_HISTORY_PATH),
+            "contents": os.listdir(CHAT_HISTORY_PATH) if os.path.exists(CHAT_HISTORY_PATH) else []
+        }
+    }
 
 if __name__ == "__main__":
     import uvicorn
