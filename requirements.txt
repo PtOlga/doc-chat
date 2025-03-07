@@ -18,3 +18,8 @@ plotly
 pytest
 httpx
 pytest-asyncio
+aiohttp
+requests
+tenacity
+
+

@@ -11,16 +11,43 @@ from langchain_core.output_parsers import StrOutputParser
 from datetime import datetime
 import json
 import traceback
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from api import router as analysis_router
 from utils import ChatAnalyzer, setup_chat_analysis
+import requests.exceptions
+import aiohttp
+from typing import Union
 
 # Initialize environment variables
 load_dotenv()
 
 app = FastAPI(title="Status Law Assistant API")
 app.include_router(analysis_router)
+
+# Add custom exception handlers
+@app.exception_handler(requests.exceptions.RequestException)
+async def network_error_handler(request: Request, exc: requests.exceptions.RequestException):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "Network error occurred",
+            "detail": str(exc),
+            "type": "network_error"
+        }
+    )
+
+@app.exception_handler(aiohttp.ClientError)
+async def aiohttp_error_handler(request: Request, exc: aiohttp.ClientError):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "Network error occurred",
+            "detail": str(exc),
+            "type": "network_error"
+        }
+    )
 
 # --------------- Model Initialization ---------------
 def init_models():
@@ -118,37 +145,63 @@ async def chat_endpoint(request: ChatRequest):
                 allow_dangerous_deserialization=True
             )
 
-        context_docs = vector_store.similarity_search(request.message)
-        context_text = "\n".join([d.page_content for d in context_docs])
+        # Add retry logic for network operations
+        max_retries = 3
+        retry_count = 0
         
-        prompt_template = PromptTemplate.from_template('''
-            You are a helpful and polite legal assistant at Status Law.
-            You answer in the language in which the question was asked.
-            Answer the question based on the context provided.
-            
-            # ... остальной текст промпта ...
+        while retry_count < max_retries:
+            try:
+                context_docs = vector_store.similarity_search(request.message)
+                context_text = "\n".join([d.page_content for d in context_docs])
+                
+                prompt_template = PromptTemplate.from_template('''
+                    You are a helpful and polite legal assistant at Status Law.
+                    You answer in the language in which the question was asked.
+                    Answer the question based on the context provided.
+                    
+                    # ... остальной текст промпта ...
 
-            Context: {context}
-            Question: {question}
-            
-            Response Guidelines:
-            1. Answer in the user's language
-            2. Cite sources when possible
-            3. Offer contact options if unsure
-            ''')
-        
-        chain = prompt_template | llm | StrOutputParser()
-        response = chain.invoke({
-            "context": context_text,
-            "question": request.message
-        })
-        
-        # Log interaction
-        log_interaction(request.message, response, context_text)
-        
-        return ChatResponse(response=response)
-            
+                    Context: {context}
+                    Question: {question}
+                    
+                    Response Guidelines:
+                    1. Answer in the user's language
+                    2. Cite sources when possible
+                    3. Offer contact options if unsure
+                    ''')
+                
+                chain = prompt_template | llm | StrOutputParser()
+                response = chain.invoke({
+                    "context": context_text,
+                    "question": request.message
+                })
+                
+                log_interaction(request.message, response, context_text)
+                return ChatResponse(response=response)
+                
+            except (requests.exceptions.RequestException, aiohttp.ClientError) as e:
+                retry_count += 1
+                if retry_count == max_retries:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={
+                            "error": "Network error after maximum retries",
+                            "detail": str(e),
+                            "type": "network_error"
+                        }
+                    )
+                await asyncio.sleep(1 * retry_count)  # Exponential backoff
+                
     except Exception as e:
+        if isinstance(e, (requests.exceptions.RequestException, aiohttp.ClientError)):
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "Network error occurred",
+                    "detail": str(e),
+                    "type": "network_error"
+                }
+            )
         raise HTTPException(status_code=500, detail=str(e))
 
 # --------------- Logging ---------------
@@ -171,6 +224,35 @@ def log_interaction(user_input: str, bot_response: str, context: str):
     except Exception as e:
         print(f"Logging error: {str(e)}")
         print(traceback.format_exc())
+
+# Add health check endpoint
+@app.get("/health")
+async def health_check():
+    try:
+        # Check if models can be initialized
+        llm, embeddings = init_models()
+        
+        # Check if vector store is accessible
+        if os.path.exists(VECTOR_STORE_PATH):
+            vector_store = FAISS.load_local(
+                VECTOR_STORE_PATH,
+                embeddings,
+                allow_dangerous_deserialization=True
+            )
+        
+        return {
+            "status": "healthy",
+            "vector_store": "available" if os.path.exists(VECTOR_STORE_PATH) else "not_found"
+        }
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "error": str(e)
+            }
+        )
 
 if __name__ == "__main__":
     import uvicorn

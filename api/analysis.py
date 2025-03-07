@@ -67,24 +67,20 @@ class LogAnalyzer:
         stats = self.get_basic_stats()
         temporal = self.temporal_analysis()
         
-        report = f"""
-        Legal Assistant Usage Report
-        ----------------------------
-        Period: {self.logs[0]['timestamp']} - {self.logs[-1]['timestamp']}
-        
-        Total Interactions: {stats['total_interactions']}
-        Unique Users: {stats['unique_users']}
-        Average Response Length: {stats['avg_response_length']:.1f} chars
-        
-        Top Questions:
-        {''.join(f"{q['question']}: {q['count']}\n" for q in stats['most_common_questions'])}
-        
-        Knowledge Base Usage:
-        - With context: {stats['knowledge_base_usage'].get('with_context', 0)}
-        - Without context: {stats['knowledge_base_usage'].get('without_context', 0)}
-        
-        Usage Patterns:
-        - Daily Activity: {temporal['daily_activity']}
-        - Hourly Distribution: {temporal['hourly_pattern']}
-        """
+        report = (
+            "Legal Assistant Usage Report\n"
+            "----------------------------\n"
+            f"Period: {self.logs[0]['timestamp']} - {self.logs[-1]['timestamp']}\n\n"
+            f"Total Interactions: {stats['total_interactions']}\n"
+            f"Unique Users: {stats['unique_users']}\n"
+            f"Average Response Length: {stats['avg_response_length']:.1f} chars\n\n"
+            "Top Questions:\n"
+            + "".join(f"- {q['question']}: {q['count']}\n" for q in stats['most_common_questions'])
+            + "\nKnowledge Base Usage:\n"
+            f"- With context: {stats['knowledge_base_usage'].get('with_context', 0)}\n"
+            f"- Without context: {stats['knowledge_base_usage'].get('without_context', 0)}\n\n"
+            "Usage Patterns:\n"
+            f"- Daily Activity: {temporal['daily_activity']}\n"
+            f"- Hourly Distribution: {temporal['hourly_pattern']}\n"
+        )
         return report
