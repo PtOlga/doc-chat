@@ -29,7 +29,7 @@ def init_models():
             api_key=os.getenv("GROQ_API_KEY")
         )
         embeddings = HuggingFaceEmbeddings(
-            model_name="intfloat/multilingual-e5-large-instruct"
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
         )
         return llm, embeddings
     except Exception as e:
