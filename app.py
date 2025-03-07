@@ -19,6 +19,14 @@ from utils import ChatAnalyzer, setup_chat_analysis
 import requests.exceptions
 import aiohttp
 from typing import Union
+import uvicorn
+import logging
+from rich import print as rprint
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
+console = Console()
 
 # Initialize environment variables
 load_dotenv()
@@ -305,6 +313,68 @@ async def check_directory_status():
         }
     }
 
+# Добавим функцию для вывода статуса
+def print_startup_status():
+    """Print application startup status with rich formatting"""
+    try:
+        # Create status table
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Component", style="cyan")
+        table.add_column("Status", style="green")
+        
+        # Check directories
+        vector_store_exists = os.path.exists(VECTOR_STORE_PATH)
+        chat_history_exists = os.path.exists(CHAT_HISTORY_PATH)
+        
+        table.add_row(
+            "Vector Store Directory",
+            "✅ Created" if vector_store_exists else "❌ Missing"
+        )
+        table.add_row(
+            "Chat History Directory",
+            "✅ Created" if chat_history_exists else "❌ Missing"
+        )
+        
+        # Check environment variables
+        table.add_row(
+            "GROQ API Key",
+            "✅ Set" if os.getenv("GROQ_API_KEY") else "❌ Missing"
+        )
+        
+        # Create status panel
+        status_panel = Panel(
+            table,
+            title="[bold blue]Status Law Assistant API Status[/bold blue]",
+            border_style="blue"
+        )
+        
+        # Print startup message and status
+        console.print("\n")
+        console.print("[bold green]🚀 Server started successfully![/bold green]")
+        console.print(status_panel)
+        console.print("\n[bold yellow]API Documentation:[/bold yellow]")
+        console.print("📚 Swagger UI: http://0.0.0.0:8000/docs")
+        console.print("📘 ReDoc: http://0.0.0.0:8000/redoc\n")
+        
+    except Exception as e:
+        console.print(f"[bold red]Error printing status: {str(e)}[/bold red]")
+
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    config = uvicorn.Config(
+        "app:app",
+        host="0.0.0.0",
+        port=8000,
+        log_level="info",
+        reload=True
+    )
+    server = uvicorn.Server(config)
+    
+    try:
+        # Start the server
+        console.print("[bold yellow]Starting Status Law Assistant API...[/bold yellow]")
+        server.run()
+    except Exception as e:
+        console.print(f"[bold red]Server failed to start: {str(e)}[/bold red]")
+    finally:
+        # Print startup status after uvicorn starts
+        print_startup_status()
