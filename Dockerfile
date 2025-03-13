@@ -2,37 +2,36 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Установка системных зависимостей
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Создание директорий с безопасными правами
+# Create directories with secure permissions
 RUN mkdir -p cache/huggingface vector_store chat_history \
     && chown -R 1000:1000 . \
     && chmod -R 755 .
 
-# Копируем зависимости отдельно для кэширования
+# Copy dependencies separately for caching
 COPY requirements.txt .
 
-# Установка Python-зависимостей
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем исходный код
+# Copy source code
 COPY . .
 
-# Настройка переменных окружения
-ENV TRANSFORMERS_CACHE=/app/cache/huggingface
+# Set environment variables
 ENV HF_HOME=/app/cache/huggingface
 ENV HUGGINGFACE_HUB_CACHE=/app/cache/huggingface
 ENV XDG_CACHE_HOME=/app/cache
 
-# Фиксируем права (только для вновь созданных файлов)
+# Set permissions (only for newly created files)
 RUN chown -R 1000:1000 /app \
     && find /app -type d -exec chmod 755 {} \; \
     && find /app -type f -exec chmod 644 {} \;
 
-# Запускаем от непривилегированного пользователя
+# Run as non-privileged user
 USER 1000
 
 EXPOSE 8000
