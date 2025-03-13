@@ -26,8 +26,9 @@ load_dotenv()
 
 # Constants for paths and URLs
 VECTOR_STORE_PATH = "vector_store"
-HF_DATASET_REPO = "Rulga/LS_chat"
 LOCAL_CHAT_HISTORY_PATH = "chat_history"
+DATA_SNAPSHOT_PATH = "data_snapshot"
+HF_DATASET_REPO = "Rulga/LS_chat"
 
 URLS = [
     "https://status.law",
