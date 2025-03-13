@@ -28,121 +28,124 @@ from rich.table import Table
 
 console = Console()
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Базовая настройка логирования
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Initialize environment variables
-load_dotenv()
-logger.debug("Environment variables loaded")
-
-# Define constants for directory paths
+# Определение путей
 VECTOR_STORE_PATH = os.path.join(os.getcwd(), "vector_store")
 CHAT_HISTORY_PATH = os.path.join(os.getcwd(), "chat_history")
-logger.debug(f"Paths initialized: VECTOR_STORE_PATH={VECTOR_STORE_PATH}, CHAT_HISTORY_PATH={CHAT_HISTORY_PATH}")
-
-def create_required_directories():
-    """Create required directories if they don't exist"""
-    try:
-        for directory in [VECTOR_STORE_PATH, CHAT_HISTORY_PATH]:
-            os.makedirs(directory, exist_ok=True)
-            gitkeep_path = os.path.join(directory, '.gitkeep')
-            if not os.path.exists(gitkeep_path):
-                with open(gitkeep_path, 'w') as f:
-                    pass
-            logger.debug(f"Directory created/verified: {directory}")
-    except Exception as e:
-        logger.error(f"Error creating directories: {str(e)}")
-        raise
-
-# Create directories before initializing the app
-create_required_directories()
 
 app = FastAPI(title="Status Law Assistant API")
-app.include_router(analysis_router)
 
-# Add startup event handler to ensure directories exist
-@app.on_event("startup")
-async def startup_event():
-    """Startup event handler"""
-    try:
-        logger.info("Starting application...")
-        # Проверяем наличие необходимых переменных окружения
-        if not os.getenv("GROQ_API_KEY"):
-            logger.error("GROQ_API_KEY not found in environment variables")
-            raise ValueError("GROQ_API_KEY is required")
-        
-        # Проверяем доступность директорий
-        for directory in [VECTOR_STORE_PATH, CHAT_HISTORY_PATH]:
-            if not os.path.exists(directory):
-                logger.error(f"Required directory not found: {directory}")
-                raise ValueError(f"Required directory not found: {directory}")
-            
-        logger.info("Application startup completed successfully")
-    except Exception as e:
-        logger.error(f"Startup failed: {str(e)}")
-        raise
+class ChatRequest(BaseModel):
+    message: str
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Shutdown event handler"""
-    logger.info("Application shutting down...")
+class ChatResponse(BaseModel):
+    response: str
 
-# Базовый маршрут для проверки
+def check_vector_store():
+    """Проверка наличия векторной базы"""
+    index_path = os.path.join(VECTOR_STORE_PATH, "index.faiss")
+    return os.path.exists(index_path)
+
 @app.get("/")
 async def root():
-    logger.debug("Root endpoint called")
+    """Базовый эндпоинт с информацией о состоянии"""
     return {
         "status": "ok",
-        "message": "Status Law Assistant API is running",
-        "environment": {
-            "GROQ_API_KEY": "configured" if os.getenv("GROQ_API_KEY") else "missing",
-            "vector_store": os.path.exists(VECTOR_STORE_PATH),
-            "chat_history": os.path.exists(CHAT_HISTORY_PATH)
-        }
+        "vector_store_ready": check_vector_store(),
+        "timestamp": datetime.now().isoformat()
     }
 
-# Add custom exception handlers
-@app.exception_handler(requests.exceptions.RequestException)
-async def network_error_handler(request: Request, exc: requests.exceptions.RequestException):
-    return JSONResponse(
-        status_code=503,
-        content={
-            "error": "Network error occurred",
-            "detail": str(exc),
-            "type": "network_error"
-        }
-    )
+@app.get("/status")
+async def get_status():
+    """Получение статуса векторной базы"""
+    return {
+        "vector_store_exists": check_vector_store(),
+        "can_chat": check_vector_store(),
+        "vector_store_path": VECTOR_STORE_PATH
+    }
 
-@app.exception_handler(aiohttp.ClientError)
-async def aiohttp_error_handler(request: Request, exc: aiohttp.ClientError):
-    return JSONResponse(
-        status_code=503,
-        content={
-            "error": "Network error occurred",
-            "detail": str(exc),
-            "type": "network_error"
-        }
-    )
-
-# --------------- Model Initialization ---------------
-def init_models():
-    """Initialize AI models"""
+@app.post("/build-knowledge-base")
+async def build_kb():
+    """Эндпоинт для построения базы знаний"""
     try:
+        if check_vector_store():
+            return {
+                "status": "exists",
+                "message": "Knowledge base already exists"
+            }
+        
+        # Инициализируем embeddings только когда нужно построить базу
+        embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
+        vector_store = build_knowledge_base(embeddings)
+        
+        return {
+            "status": "success",
+            "message": "Knowledge base built successfully"
+        }
+    except Exception as e:
+        logger.error(f"Failed to build knowledge base: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to build knowledge base: {str(e)}"
+        )
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat_endpoint(request: ChatRequest):
+    """Эндпоинт чата"""
+    if not check_vector_store():
+        raise HTTPException(
+            status_code=400,
+            detail="Knowledge base not found. Please build it first using /build-knowledge-base endpoint"
+        )
+    
+    try:
+        # Инициализируем компоненты только при необходимости
         llm = ChatGroq(
             model_name="llama-3.3-70b-versatile",
             temperature=0.6,
             api_key=os.getenv("GROQ_API_KEY")
         )
+        
         embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2"
         )
-        return llm, embeddings
+        
+        vector_store = FAISS.load_local(
+            VECTOR_STORE_PATH,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
+
+        # Остальная логика чата...
+        context_docs = vector_store.similarity_search(request.message)
+        context_text = "\n".join([d.page_content for d in context_docs])
+        
+        prompt_template = PromptTemplate.from_template('''
+            You are a helpful and polite legal assistant at Status Law.
+            Answer the question based on the context provided.
+            Context: {context}
+            Question: {question}
+        ''')
+        
+        chain = prompt_template | llm | StrOutputParser()
+        response = chain.invoke({
+            "context": context_text,
+            "question": request.message
+        })
+        
+        return ChatResponse(response=response)
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Model initialization failed: {str(e)}")
+        logger.error(f"Chat error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Chat error: {str(e)}"
+        )
 
 # --------------- Knowledge Base Management ---------------
 URLS = [
