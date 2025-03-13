@@ -1,4 +1,14 @@
 import os
+
+# Установка переменных окружения для кэша HuggingFace
+os.environ["TRANSFORMERS_CACHE"] = "cache/huggingface"
+os.environ["HF_HOME"] = "cache/huggingface"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "cache/huggingface"
+os.environ["XDG_CACHE_HOME"] = "cache"
+
+# Создание необходимых директорий
+os.makedirs("cache/huggingface", exist_ok=True)
+
 import time
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
