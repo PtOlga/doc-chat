@@ -1,0 +1,9 @@
+sdk: docker
+title: Status Law Assistant
+emoji: ⚖️
+colorFrom: blue
+colorTo: indigo
+sdk_version: 0.0.1
+app_port: 8000
+pinned: false
+license: mit

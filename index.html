@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Status Law Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .chat-container {
+            max-width: 800px;
+            margin: 30px auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .chat-header {
+            padding: 15px 20px;
+            background: linear-gradient(135deg, #2B5876 0%, #4E4376 100%);
+            color: white;
+            border-bottom: 1px solid #e6e6e6;
+        }
+        .chat-area {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .user-message, .bot-message {
+            padding: 8px 15px;
+            margin-bottom: 10px;
+            border-radius: 18px;
+            max-width: 75%;
+            word-wrap: break-word;
+        }
+        .user-message {
+            background-color: #e2f0ff;
+            margin-left: auto;
+            border-bottom-right-radius: 5px;
+        }
+        .bot-message {
+            background-color: #f0f0f0;
+            margin-right: auto;
+            border-bottom-left-radius: 5px;
+        }
+        .input-area {
+            padding: 15px;
+            background-color: white;
+            border-top: 1px solid #e6e6e6;
+        }
+        .kb-status {
+            padding: 10px 20px;
+            background-color: #f8f9fa;
+            border-top: 1px solid #e6e6e6;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+        .kb-badge {
+            font-size: 0.8em;
+            padding: 5px 10px;
+            border-radius: 15px;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0,0,0,.1);
+            border-radius: 50%;
+            border-top-color: #2B5876;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="chat-container">
+            <div class="chat-header d-flex justify-content-between align-items-center">
+                <h1 class="h4 mb-0">⚖️ Status Law Assistant</h1>
+                <span id="kb-status-badge" class="kb-badge bg-warning">Checking...</span>
+            </div>
+            
+            <div id="kb-action-area" class="p-3 bg-light d-none">
+                <div class="alert alert-warning">
+                    Knowledge base not found. You need to build it before chatting.
+                </div>
+                <button id="build-kb-btn" class="btn btn-primary">Build Knowledge Base</button>
+            </div>
+            
+            <div id="chat-area" class="chat-area">
+                <div class="bot-message">
+                    Hello! I'm the Status Law assistant. How can I help you with your legal questions?
+                </div>
+            </div>
+            
+            <div class="input-area">
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="user-input" 
+                        class="form-control" 
+                        placeholder="Type your message here..." 
+                        aria-label="Message"
+                    >
+                    <button id="send-btn" class="btn btn-primary">Send</button>
+                </div>
+            </div>
+            
+            <div class="kb-status">
+                <small id="kb-info">Loading knowledge base info...</small>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let conversationId = null;
+        
+        // DOM elements
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const chatArea = document.getElementById('chat-area');
+        const kbInfo = document.getElementById('kb-info');
+        const kbStatusBadge = document.getElementById('kb-status-badge');
+        const kbActionArea = document.getElementById('kb-action-area');
+        const buildKbBtn = document.getElementById('build-kb-btn');
+        
+        // Check knowledge base status on load
+        checkKnowledgeBaseStatus();
+        
+        // Event listeners
+        sendBtn.addEventListener('click', sendMessage);
+        userInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+        
+        buildKbBtn.addEventListener('click', buildKnowledgeBase);
+        
+        // Functions
+        async function checkKnowledgeBaseStatus() {
+            try {
+                const response = await fetch('/');
+                const data = await response.json();
+                
+                if (data.knowledge_base_exists) {
+                    kbStatusBadge.className = 'kb-badge bg-success';
+                    kbStatusBadge.textContent = 'Ready';
+                    kbActionArea.classList.add('d-none');
+                    
+                    if (data.kb_info) {
+                        const date = new Date(data.kb_info.build_time * 1000);
+                        const formattedDate = date.toLocaleString();
+                        kbInfo.textContent = `Knowledge base version: ${data.kb_info.version || 'Unknown'}, Size: ${data.kb_info.size ? data.kb_info.size.toFixed(2) + ' MB' : 'Unknown'}`;
+                    }
+                } else {
+                    kbStatusBadge.className = 'kb-badge bg-danger';
+                    kbStatusBadge.textContent = 'Not Ready';
+                    kbActionArea.classList.remove('d-none');
+                    kbInfo.textContent = 'Knowledge base not found. Please build it first.';
+                }
+            } catch (error) {
+                console.error('Error checking KB status:', error);
+                kbStatusBadge.className = 'kb-badge bg-danger';
+                kbStatusBadge.textContent = 'Error';
+                kbInfo.textContent = 'Error checking knowledge base status.';
+            }
+        }
+        
+        async function buildKnowledgeBase() {
+            try {
+                kbStatusBadge.className = 'kb-badge bg-warning';
+                kbStatusBadge.textContent = 'Building...';
+                buildKbBtn.disabled = true;
+                buildKbBtn.innerHTML = '<span class="loading me-2"></span> Building...';
+                
+                const response = await fetch('/build-kb', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    kbStatusBadge.className = 'kb-badge bg-success';
+                    kbStatusBadge.textContent = 'Ready';
+                    kbActionArea.classList.add('d-none');
+                    
+                    if (data.details) {
+                        kbInfo.textContent = `Knowledge base version: ${data.details.version || 'Unknown'}, Size: ${data.details.size ? data.details.size.toFixed(2) + ' MB' : 'Unknown'}`;
+                    }
+                    
+                    // Add a system message
+                    addBotMessage("Knowledge base built successfully! You can now ask questions.");
+                } else {
+                    throw new Error(data.detail || 'Failed to build knowledge base');
+                }
+            } catch (error) {
+                console.error('Error building KB:', error);
+                kbStatusBadge.className = 'kb-badge bg-danger';
+                kbStatusBadge.textContent = 'Error';
+                kbInfo.textContent = 'Error building knowledge base.';
+                addBotMessage("There was an error building the knowledge base. Please try again later.");
+            } finally {
+                buildKbBtn.disabled = false;
+                buildKbBtn.textContent = 'Build Knowledge Base';
+            }
+        }
+        
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+            
+            // Add user message to chat
+            addUserMessage(message);
+            userInput.value = '';
+            
+            // Add a temporary bot message with loading indicator
+            const loadingMsgElement = addBotMessage('<span class="loading me-2"></span> Thinking...');
+            
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        conversation_id: conversationId
+                    }),
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Update conversation ID for future messages
+                    conversationId = data.conversation_id;
+                    
+                    // Replace loading message with actual response
+                    loadingMsgElement.innerHTML = data.response;
+                } else {
+                    throw new Error(data.detail || 'Failed to get response');
+                }
+            } catch (error) {
+                console.error('Error sending message:', error);
+                loadingMsgElement.innerHTML = "Sorry, I encountered an error processing your request. Please try again later.";
+            }
+            
+            // Scroll to bottom
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+        
+        function addUserMessage(text) {
+            const div = document.createElement('div');
+            div.className = 'user-message';
+            div.textContent = text;
+            chatArea.appendChild(div);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+        
+        function addBotMessage(html) {
+            const div = document.createElement('div');
+            div.className = 'bot-message';
+            div.innerHTML = html;
+            chatArea.appendChild(div);
+            chatArea.scrollTop = chatArea.scrollHeight;
+            return div;
+        }
+    </script>
+</body>
+</html>
