@@ -2,32 +2,39 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file
+# Создание директорий с безопасными правами
+RUN mkdir -p cache/huggingface vector_store chat_history \
+    && chown -R 1000:1000 . \
+    && chmod -R 755 .
+
+# Копируем зависимости отдельно для кэширования
 COPY requirements.txt .
 
-# Install Python dependencies
+# Установка Python-зависимостей
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application
+# Копируем исходный код
 COPY . .
 
-# Create directories for persistent storage
-RUN mkdir -p vector_store
-RUN mkdir -p chat_history
+# Настройка переменных окружения
+ENV TRANSFORMERS_CACHE=/app/cache/huggingface
+ENV HF_HOME=/app/cache/huggingface
+ENV HUGGINGFACE_HUB_CACHE=/app/cache/huggingface
+ENV XDG_CACHE_HOME=/app/cache
 
-# Make sure the static directory exists
-RUN mkdir -p static
+# Фиксируем права (только для вновь созданных файлов)
+RUN chown -R 1000:1000 /app \
+    && find /app -type d -exec chmod 755 {} \; \
+    && find /app -type f -exec chmod 644 {} \;
 
-# Copy the frontend to the static directory
-COPY index.html static/
+# Запускаем от непривилегированного пользователя
+USER 1000
 
-# Expose the port the app runs on
 EXPOSE 8000
 
-# Command to run the application
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
