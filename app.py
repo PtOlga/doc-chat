@@ -28,32 +28,35 @@ from rich.table import Table
 
 console = Console()
 
+# Настройка логирования
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Initialize environment variables
 load_dotenv()
+logger.debug("Environment variables loaded")
 
 # Define constants for directory paths
-VECTOR_STORE_PATH = "vector_store"
-CHAT_HISTORY_PATH = "chat_history"
+VECTOR_STORE_PATH = os.path.join(os.getcwd(), "vector_store")
+CHAT_HISTORY_PATH = os.path.join(os.getcwd(), "chat_history")
+logger.debug(f"Paths initialized: VECTOR_STORE_PATH={VECTOR_STORE_PATH}, CHAT_HISTORY_PATH={CHAT_HISTORY_PATH}")
 
 def create_required_directories():
     """Create required directories if they don't exist"""
-    directories = [VECTOR_STORE_PATH, CHAT_HISTORY_PATH]
-    for directory in directories:
-        try:
-            if not os.path.exists(directory):
-                os.makedirs(directory, exist_ok=True)
-                print(f"Created directory: {directory}")
-                
-                # Create .gitkeep file to preserve empty directory
-                gitkeep_path = os.path.join(directory, '.gitkeep')
+    try:
+        for directory in [VECTOR_STORE_PATH, CHAT_HISTORY_PATH]:
+            os.makedirs(directory, exist_ok=True)
+            gitkeep_path = os.path.join(directory, '.gitkeep')
+            if not os.path.exists(gitkeep_path):
                 with open(gitkeep_path, 'w') as f:
                     pass
-        except Exception as e:
-            print(f"Error creating directory {directory}: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to create required directory: {directory}"
-            )
+            logger.debug(f"Directory created/verified: {directory}")
+    except Exception as e:
+        logger.error(f"Error creating directories: {str(e)}")
+        raise
 
 # Create directories before initializing the app
 create_required_directories()
@@ -64,8 +67,43 @@ app.include_router(analysis_router)
 # Add startup event handler to ensure directories exist
 @app.on_event("startup")
 async def startup_event():
-    """Ensure required directories exist on startup"""
-    create_required_directories()
+    """Startup event handler"""
+    try:
+        logger.info("Starting application...")
+        # Проверяем наличие необходимых переменных окружения
+        if not os.getenv("GROQ_API_KEY"):
+            logger.error("GROQ_API_KEY not found in environment variables")
+            raise ValueError("GROQ_API_KEY is required")
+        
+        # Проверяем доступность директорий
+        for directory in [VECTOR_STORE_PATH, CHAT_HISTORY_PATH]:
+            if not os.path.exists(directory):
+                logger.error(f"Required directory not found: {directory}")
+                raise ValueError(f"Required directory not found: {directory}")
+            
+        logger.info("Application startup completed successfully")
+    except Exception as e:
+        logger.error(f"Startup failed: {str(e)}")
+        raise
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Shutdown event handler"""
+    logger.info("Application shutting down...")
+
+# Базовый маршрут для проверки
+@app.get("/")
+async def root():
+    logger.debug("Root endpoint called")
+    return {
+        "status": "ok",
+        "message": "Status Law Assistant API is running",
+        "environment": {
+            "GROQ_API_KEY": "configured" if os.getenv("GROQ_API_KEY") else "missing",
+            "vector_store": os.path.exists(VECTOR_STORE_PATH),
+            "chat_history": os.path.exists(CHAT_HISTORY_PATH)
+        }
+    }
 
 # Add custom exception handlers
 @app.exception_handler(requests.exceptions.RequestException)
@@ -360,21 +398,17 @@ def print_startup_status():
         console.print(f"[bold red]Error printing status: {str(e)}[/bold red]")
 
 if __name__ == "__main__":
-    config = uvicorn.Config(
-        "app:app",
-        host="0.0.0.0",
-        port=8000,
-        log_level="info",
-        reload=True
-    )
-    server = uvicorn.Server(config)
+    import uvicorn
     
-    try:
-        # Start the server
-        console.print("[bold yellow]Starting Status Law Assistant API...[/bold yellow]")
-        server.run()
-    except Exception as e:
-        console.print(f"[bold red]Server failed to start: {str(e)}[/bold red]")
-    finally:
-        # Print startup status after uvicorn starts
-        print_startup_status()
+    port = int(os.getenv("PORT", 8000))
+    logger.info(f"Starting server on port {port}")
+    
+    config = uvicorn.Config(
+        app,
+        host="0.0.0.0",
+        port=port,
+        log_level="debug"
+    )
+    
+    server = uvicorn.Server(config)
+    server.run()
