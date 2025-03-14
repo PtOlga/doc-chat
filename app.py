@@ -314,6 +314,11 @@ async def root():
         "kb_info": kb_info if vector_store_exists else None
     }
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy"}
+
 @app.post("/build-kb", response_model=BuildKnowledgeBaseResponse)
 async def build_kb_endpoint():
     """Endpoint to build/rebuild the knowledge base"""
