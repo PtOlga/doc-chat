@@ -28,3 +28,4 @@ chat_history/*
 # Hugging Face Space
 .streamlit/
 stop_space.py
+/cache/huggingface
