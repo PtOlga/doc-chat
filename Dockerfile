@@ -27,8 +27,8 @@ RUN set -x && \
 
 # Copy application files
 COPY app.py .
-COPY .env .
 COPY index.html .
+
 
 # Set environment variables
 ENV HF_HOME=/app/cache/huggingface
