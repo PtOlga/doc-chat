@@ -2,21 +2,30 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies with verbose output
+RUN set -x && \
+    apt-get update && \
+    apt-get install -y \
     build-essential \
-    && rm -rf /var/lib/apt/lists/*
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/* \
+    && echo "System dependencies installed successfully"
 
 # Create directories with secure permissions
-RUN mkdir -p cache/huggingface vector_store chat_history \
-    && chown -R 1000:1000 . \
-    && chmod -R 755 .
+RUN set -x && \
+    mkdir -p cache/huggingface vector_store chat_history && \
+    chown -R 1000:1000 . && \
+    chmod -R 755 . && \
+    echo "Directories created successfully"
 
 # Copy requirements first for better caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN set -x && \
+    pip install --no-cache-dir -r requirements.txt && \
+    echo "Python dependencies installed successfully"
 
-# Copy only necessary files
+# Copy application files
 COPY app.py .
 COPY .env .
 COPY index.html .
@@ -28,9 +37,11 @@ ENV XDG_CACHE_HOME=/app/cache
 ENV PORT=8000
 
 # Set permissions
-RUN chown -R 1000:1000 /app \
-    && find /app -type d -exec chmod 755 {} \; \
-    && find /app -type f -exec chmod 644 {} \;
+RUN set -x && \
+    chown -R 1000:1000 /app && \
+    find /app -type d -exec chmod 755 {} \; && \
+    find /app -type f -exec chmod 644 {} \; && \
+    echo "Permissions set successfully"
 
 # Run as non-privileged user
 USER 1000
@@ -41,5 +52,5 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 
 EXPOSE 8000
 
-# Use a startup script
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "120"]
+# Use a startup script with debug output
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug"]
