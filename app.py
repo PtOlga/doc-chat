@@ -7,7 +7,6 @@ import uvicorn
 import requests
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 
 # Add project root to Python path
 current_dir = os.path.abspath(os.path.dirname(__file__))

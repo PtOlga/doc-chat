@@ -59,8 +59,8 @@ URLS = [
 # Initialize the FastAPI app
 app = FastAPI(title="Status Law Assistant API")
 
-# Support for static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Remove the static files mounting since we don't need it
+# app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Web interface route
 @app.get("/web", response_class=HTMLResponse)
