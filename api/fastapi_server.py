@@ -30,6 +30,8 @@ import traceback
 from typing import Dict, List, Optional
 from pydantic import BaseModel
 from huggingface_hub import Repository, snapshot_download
+import requests
+from bs4 import BeautifulSoup
 
 # Initialize environment variables
 load_dotenv()
@@ -232,15 +234,35 @@ def build_knowledge_base():
         # Create folder in advance
         os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
         
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
         # Load documents with detailed logging
         for url in URLS:
             try:
                 print(f"Attempting to load {url}")
-                loader = WebBaseLoader(url)
+                loader = WebBaseLoader(
+                    web_paths=[url],
+                    header_template=headers,
+                    requests_per_second=2,
+                    timeout=30
+                )
                 docs = loader.load()
                 print(f"Successfully loaded {url}, got {len(docs)} documents")
-                documents.extend(docs)
-                print(f"Loaded {url}")
+                if docs:
+                    documents.extend(docs)
+                else:
+                    # Попробуем альтернативный метод загрузки
+                    response = requests.get(url, headers=headers, timeout=30)
+                    response.raise_for_status()
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    # Получаем основной контент, исключая навигацию и футер
+                    main_content = ' '.join([p.text for p in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li'])])
+                    if main_content:
+                        from langchain_core.documents import Document
+                        documents.append(Document(page_content=main_content, metadata={"source": url}))
+                        print(f"Loaded {url} using alternative method")
             except Exception as e:
                 print(f"Failed to load {url}: {str(e)}")
                 print(f"Full error: {traceback.format_exc()}")
