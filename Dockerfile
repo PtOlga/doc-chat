@@ -28,7 +28,7 @@ RUN set -x && \
 # Copy application files
 COPY app.py .
 COPY index.html .
-
+COPY api/ ./api/
 
 # Set environment variables
 ENV HF_HOME=/app/cache/huggingface
@@ -54,4 +54,5 @@ EXPOSE 8000
 
 # Use a startup script with debug output
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug"]
+
 
