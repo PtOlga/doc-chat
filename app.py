@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 # Import our main application
-from fastapi_server import app as fastapi_app
+from api.fastapi_server import app as fastapi_app
 
 # Run FastAPI server in a separate thread
 def run_fastapi():
