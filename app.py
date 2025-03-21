@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 import time
 import gradio as gr
@@ -7,6 +8,8 @@ import requests
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 # Import our main application
 from api.fastapi_server import app as fastapi_app
