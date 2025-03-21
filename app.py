@@ -60,7 +60,10 @@ def check_kb_status():
             data = response.json()
             if data["knowledge_base_exists"]:
                 kb_info = data["kb_info"]
-                return f"✅ База знаний готова к работе\nВерсия: {kb_info['version']}\nРазмер: {kb_info['size']:.2f} MB"
+                # Добавляем проверки на None и значения по умолчанию
+                version = kb_info.get('version', 'N/A')
+                size = kb_info.get('size', 0)
+                return f"✅ База знаний готова к работе\nВерсия: {version}\nРазмер: {size:.2f if size else 0} MB"
             else:
                 return "❌ База знаний не создана. Нажмите кнопку 'Create/Update Knowledge Base'"
     except Exception as e:
