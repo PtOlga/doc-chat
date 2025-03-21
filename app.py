@@ -52,22 +52,63 @@ def build_kb():
     except Exception as e:
         return f"API connection error: {str(e)}"
 
+# Добавим функцию проверки статуса базы знаний
+def check_kb_status():
+    try:
+        response = requests.get("http://127.0.0.1:8000/")
+        if response.status_code == 200:
+            data = response.json()
+            if data["knowledge_base_exists"]:
+                kb_info = data["kb_info"]
+                return f"✅ База знаний готова к работе\nВерсия: {kb_info['version']}\nРазмер: {kb_info['size']:.2f} MB"
+            else:
+                return "❌ База знаний не создана. Нажмите кнопку 'Create/Update Knowledge Base'"
+    except Exception as e:
+        return f"❌ Ошибка проверки статуса: {str(e)}"
+
 # Create the Gradio interface
-with gr.Blocks() as demo:
-    gr.Markdown("# Status Law Assistant")
+with gr.Blocks(title="Status Law Assistant", theme=gr.themes.Soft()) as demo:
+    gr.Markdown("# 🤖 Status Law Assistant")
     
     with gr.Row():
-        with gr.Column():
-            build_kb_btn = gr.Button("Create/Update Knowledge Base")
-            kb_status = gr.Textbox(label="Knowledge Base Status")
+        with gr.Column(scale=1):
+            # Кнопки управления базой знаний
+            build_kb_btn = gr.Button("Create/Update Knowledge Base", variant="primary")
+            check_status_btn = gr.Button("Check Status")
+            kb_status = gr.Textbox(
+                label="Knowledge Base Status",
+                value="Checking status...",
+                interactive=False
+            )
+            # Привязываем обе кнопки
             build_kb_btn.click(build_kb, inputs=None, outputs=kb_status)
+            check_status_btn.click(check_kb_status, inputs=None, outputs=kb_status)
     
+    gr.Markdown("### 💬 Chat Interface")
     conversation_id = gr.State(None)
     
     with gr.Row():
-        with gr.Column():
-            chatbot = gr.Chatbot(label="Chat with Assistant")
-            msg = gr.Textbox(label="Your Question")
+        with gr.Column(scale=2):
+            # Улучшенный интерфейс чата
+            chatbot = gr.Chatbot(
+                label="Conversation",
+                height=400,
+                show_label=False,
+                bubble_full_width=False
+            )
+            with gr.Row():
+                msg = gr.Textbox(
+                    label="Введите ваш вопрос здесь",
+                    placeholder="Напишите ваш вопрос и нажмите Enter...",
+                    scale=4
+                )
+                submit_btn = gr.Button("Отправить", variant="primary", scale=1)
+            
+            # Добавляем очистку истории
+            clear_btn = gr.Button("Очистить историю")
+            
+            def clear_history():
+                return [], None
             
             def respond(message, chat_history, conv_id):
                 if not message.strip():
@@ -78,8 +119,27 @@ with gr.Blocks() as demo:
                 chat_history[-1][1] = response
                 return chat_history, new_conv_id
             
+            # Привязываем обработчики
             msg.submit(respond, [msg, chatbot, conversation_id], [chatbot, conversation_id])
+            submit_btn.click(respond, [msg, chatbot, conversation_id], [chatbot, conversation_id])
+            clear_btn.click(clear_history, None, [chatbot, conversation_id])
+
+    # Добавляем информацию об использовании
+    with gr.Accordion("ℹ️ Как использовать", open=False):
+        gr.Markdown("""
+        1. Сначала нажмите кнопку **Create/Update Knowledge Base** для создания базы знаний
+        2. Дождитесь сообщения об успешном создании базы
+        3. Введите ваш вопрос в текстовое поле и нажмите Enter или кнопку "Отправить"
+        4. Используйте кнопку "Очистить историю" для начала новой беседы
+        """)
 
 if __name__ == "__main__":
+    # Проверяем статус базы знаний при запуске
+    initial_status = check_kb_status()
     # Launch Gradio interface
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False
+    )
+    #demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
