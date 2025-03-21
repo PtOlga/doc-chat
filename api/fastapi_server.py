@@ -232,19 +232,26 @@ def build_knowledge_base():
         # Create folder in advance
         os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
         
-        # Load documents
+        # Load documents with detailed logging
         for url in URLS:
             try:
+                print(f"Attempting to load {url}")
                 loader = WebBaseLoader(url)
                 docs = loader.load()
+                print(f"Successfully loaded {url}, got {len(docs)} documents")
                 documents.extend(docs)
                 print(f"Loaded {url}")
             except Exception as e:
                 print(f"Failed to load {url}: {str(e)}")
+                print(f"Full error: {traceback.format_exc()}")
                 continue
                 
+        print(f"Total documents loaded: {len(documents)}")
+        
         if not documents:
-            raise HTTPException(status_code=500, detail="No documents loaded!")
+            error_msg = "No documents loaded! Check if the URLs are accessible and contain valid content."
+            print(error_msg)
+            raise HTTPException(status_code=500, detail=error_msg)
 
         # Split into chunks
         text_splitter = RecursiveCharacterTextSplitter(
