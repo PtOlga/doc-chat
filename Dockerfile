@@ -54,3 +54,4 @@ EXPOSE 8000
 
 # Use a startup script with debug output
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug"]
+
