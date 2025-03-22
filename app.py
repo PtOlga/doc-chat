@@ -74,6 +74,19 @@ def build_kb():
     except Exception as e:
         return f"API connection error: {str(e)}"
 
+def get_kb_size():
+    """Calculate actual knowledge base size from files"""
+    vector_store_path = "vector_store"
+    try:
+        total_size = 0
+        for file in ["index.faiss", "index.pkl"]:
+            file_path = os.path.join(vector_store_path, file)
+            if os.path.exists(file_path):
+                total_size += os.path.getsize(file_path)
+        return total_size / (1024 * 1024)  # Convert to MB
+    except Exception:
+        return None
+
 # Добавим функцию проверки статуса базы знаний
 def check_kb_status():
     try:
@@ -83,11 +96,25 @@ def check_kb_status():
             if data["knowledge_base_exists"]:
                 kb_info = data["kb_info"]
                 version = kb_info.get('version', 'N/A')
-                size = kb_info.get('size', 0)
-                return f"✅ База знаний готова к работе\nВерсия: {version}\nРазмер: {size:.2f if size else 0} MB"
+                
+                # Получаем реальный размер файлов
+                actual_size = get_kb_size()
+                size_text = f"{actual_size:.2f} MB" if actual_size is not None else "N/A"
+                
+                return f"✅ База знаний готова к работе\nВерсия: {version}\nРазмер: {size_text}"
             else:
+                # Проверяем, есть ли файлы на диске
+                if os.path.exists(os.path.join("vector_store", "index.faiss")):
+                    actual_size = get_kb_size()
+                    size_text = f"{actual_size:.2f} MB" if actual_size is not None else "N/A"
+                    return f"✅ База знаний найдена на диске\nРазмер: {size_text}\nТребуется перезагрузка сервера"
                 return "❌ База знаний не создана. Нажмите кнопку 'Create/Update Knowledge Base'"
     except Exception as e:
+        # Проверяем наличие файлов даже при ошибке соединения
+        if os.path.exists(os.path.join("vector_store", "index.faiss")):
+            actual_size = get_kb_size()
+            size_text = f"{actual_size:.2f} MB" if actual_size is not None else "N/A"
+            return f"⚠️ Ошибка соединения, но база знаний существует\nРазмер: {size_text}"
         return f"❌ Ошибка проверки статуса: {str(e)}"
 
 # Create the Gradio interface
