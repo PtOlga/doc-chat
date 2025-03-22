@@ -117,6 +117,47 @@ def check_kb_status():
             return f"⚠️ Ошибка соединения, но база знаний существует\nРазмер: {size_text}"
         return f"❌ Ошибка проверки статуса: {str(e)}"
 
+# Add this before creating the Gradio interface
+def respond(message, chat_history, conv_id=None):
+    """Handle chat responses"""
+    if not message:
+        return chat_history, conv_id
+    
+    # Add user message to chat history
+    chat_history = chat_history + [[message, None]]
+    
+    try:
+        # Send request to FastAPI backend
+        response = requests.post(
+            "http://127.0.0.1:8000/chat",
+            json={
+                "message": message,
+                "conversation_id": conv_id
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            bot_response = data["response"]
+            conv_id = data["conversation_id"]
+        else:
+            bot_response = f"Error: {response.status_code} - {response.text}"
+            
+    except Exception as e:
+        bot_response = f"Error connecting to backend: {str(e)}"
+    
+    # Update last message with bot response
+    chat_history[-1][1] = bot_response
+    
+    return chat_history, conv_id
+
+def clear_history():
+    """Clear chat history"""
+    return None, None
+
+# Initialize conversation ID
+conversation_id = gr.State(None)
+
 # Create the Gradio interface
 with gr.Blocks(title="Status Law Assistant", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 🤖 Status Law Assistant")
