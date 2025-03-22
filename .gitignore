@@ -29,3 +29,6 @@ chat_history/*
 .streamlit/
 stop_space.py
 /cache/huggingface
+
+# Matplotlib cache
+cache/matplotlib/

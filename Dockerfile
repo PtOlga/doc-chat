@@ -14,7 +14,7 @@ RUN set -x && \
 
 # Create directories with secure permissions
 RUN set -x && \
-    mkdir -p cache/huggingface vector_store chat_history && \
+    mkdir -p cache/huggingface cache/matplotlib vector_store chat_history && \
     chown -R 1000:1000 . && \
     chmod -R 755 . && \
     echo "Directories created successfully"
@@ -55,4 +55,5 @@ EXPOSE 8000
 # Use a startup script with debug output
 # CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug"]
 CMD ["python", "app.py"]
+
 

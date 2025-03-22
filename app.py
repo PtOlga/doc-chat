@@ -2,6 +2,12 @@ import os
 import sys
 import threading
 import time
+
+# Установка конфигурационной директории для Matplotlib
+os.environ['MPLCONFIGDIR'] = os.path.join(os.getcwd(), 'cache', 'matplotlib')
+# Создаем директорию с правильными правами
+os.makedirs(os.environ['MPLCONFIGDIR'], exist_ok=True)
+
 import gradio as gr
 import uvicorn
 import requests
