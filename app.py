@@ -2,6 +2,8 @@ import os
 import sys
 import threading
 import time
+import requests
+from requests.exceptions import ConnectionError
 
 # Установка конфигурационной директории для Matplotlib
 os.environ['MPLCONFIGDIR'] = os.path.join(os.getcwd(), 'cache', 'matplotlib')
@@ -10,7 +12,6 @@ os.makedirs(os.environ['MPLCONFIGDIR'], exist_ok=True)
 
 import gradio as gr
 import uvicorn
-import requests
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -22,6 +23,19 @@ if current_dir not in sys.path:
 # Import our main application
 from api.fastapi_server import app as fastapi_app
 
+def wait_for_fastapi(timeout=30, interval=0.5):
+    """Wait for FastAPI server to start"""
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            response = requests.get("http://127.0.0.1:8000/health")
+            if response.status_code == 200:
+                print("FastAPI server is ready!")
+                return True
+        except ConnectionError:
+            time.sleep(interval)
+    return False
+
 # Run FastAPI server in a separate thread
 def run_fastapi():
     uvicorn.run(fastapi_app, host="0.0.0.0", port=8000)
@@ -31,7 +45,9 @@ fastapi_thread = threading.Thread(target=run_fastapi, daemon=True)
 fastapi_thread.start()
 
 # Wait for FastAPI to start
-time.sleep(5)
+if not wait_for_fastapi():
+    print("Failed to start FastAPI server")
+    sys.exit(1)
 
 # Create a Gradio interface that will proxy requests to FastAPI
 def chat_with_api(message, conversation_id=None):
@@ -66,7 +82,6 @@ def check_kb_status():
             data = response.json()
             if data["knowledge_base_exists"]:
                 kb_info = data["kb_info"]
-                # Добавляем проверки на None и значения по умолчанию
                 version = kb_info.get('version', 'N/A')
                 size = kb_info.get('size', 0)
                 return f"✅ База знаний готова к работе\nВерсия: {version}\nРазмер: {size:.2f if size else 0} MB"
@@ -143,8 +158,6 @@ with gr.Blocks(title="Status Law Assistant", theme=gr.themes.Soft()) as demo:
         """)
 
 if __name__ == "__main__":
-    # Проверяем статус базы знаний при запуске
-    initial_status = check_kb_status()
     # Launch Gradio interface
     demo.launch(
         server_name="0.0.0.0",
