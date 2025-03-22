@@ -122,8 +122,25 @@ with gr.Blocks(title="Status Law Assistant", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 🤖 Status Law Assistant")
     
     with gr.Row():
+        # Left column for chat (larger)
+        with gr.Column(scale=3):
+            chatbot = gr.Chatbot(
+                label="Conversation",
+                height=600,
+                show_label=False,
+                bubble_full_width=False
+            )
+            with gr.Row():
+                msg = gr.Textbox(
+                    label="Enter your question here",
+                    placeholder="Type your message and press Enter...",
+                    scale=4
+                )
+                submit_btn = gr.Button("Send", variant="primary", scale=1)
+        
+        # Right column for controls (smaller)
         with gr.Column(scale=1):
-            # Кнопки управления базой знаний
+            gr.Markdown("### Knowledge Base Controls")
             build_kb_btn = gr.Button("Create/Update Knowledge Base", variant="primary")
             check_status_btn = gr.Button("Check Status")
             kb_status = gr.Textbox(
@@ -131,58 +148,25 @@ with gr.Blocks(title="Status Law Assistant", theme=gr.themes.Soft()) as demo:
                 value="Checking status...",
                 interactive=False
             )
-            # Привязываем обе кнопки
-            build_kb_btn.click(build_kb, inputs=None, outputs=kb_status)
-            check_status_btn.click(check_kb_status, inputs=None, outputs=kb_status)
+            
+            gr.Markdown("### Chat Controls")
+            clear_btn = gr.Button("Clear Chat History")
+            
+            # Help section
+            with gr.Accordion("ℹ️ How to use", open=False):
+                gr.Markdown("""
+                1. First, click **Create/Update Knowledge Base** button
+                2. Wait for confirmation message
+                3. Enter your question in the text field and press Enter or "Send" button
+                4. Use "Clear Chat History" to start a new conversation
+                """)
     
-    gr.Markdown("### 💬 Chat Interface")
-    conversation_id = gr.State(None)
-    
-    with gr.Row():
-        with gr.Column(scale=2):
-            # Улучшенный интерфейс чата
-            chatbot = gr.Chatbot(
-                label="Conversation",
-                height=400,
-                show_label=False,
-                bubble_full_width=False
-            )
-            with gr.Row():
-                msg = gr.Textbox(
-                    label="Введите ваш вопрос здесь",
-                    placeholder="Напишите ваш вопрос и нажмите Enter...",
-                    scale=4
-                )
-                submit_btn = gr.Button("Отправить", variant="primary", scale=1)
-            
-            # Добавляем очистку истории
-            clear_btn = gr.Button("Очистить историю")
-            
-            def clear_history():
-                return [], None
-            
-            def respond(message, chat_history, conv_id):
-                if not message.strip():
-                    return chat_history, conv_id
-                
-                chat_history.append([message, ""])
-                response, new_conv_id = chat_with_api(message, conv_id)
-                chat_history[-1][1] = response
-                return chat_history, new_conv_id
-            
-            # Привязываем обработчики
-            msg.submit(respond, [msg, chatbot, conversation_id], [chatbot, conversation_id])
-            submit_btn.click(respond, [msg, chatbot, conversation_id], [chatbot, conversation_id])
-            clear_btn.click(clear_history, None, [chatbot, conversation_id])
-
-    # Добавляем информацию об использовании
-    with gr.Accordion("ℹ️ Как использовать", open=False):
-        gr.Markdown("""
-        1. Сначала нажмите кнопку **Create/Update Knowledge Base** для создания базы знаний
-        2. Дождитесь сообщения об успешном создании базы
-        3. Введите ваш вопрос в текстовое поле и нажмите Enter или кнопку "Отправить"
-        4. Используйте кнопку "Очистить историю" для начала новой беседы
-        """)
+    # Event handlers remain the same
+    msg.submit(respond, [msg, chatbot, conversation_id], [chatbot, conversation_id])
+    submit_btn.click(respond, [msg, chatbot, conversation_id], [chatbot, conversation_id])
+    clear_btn.click(clear_history, None, [chatbot, conversation_id])
+    build_kb_btn.click(build_kb, inputs=None, outputs=kb_status)
+    check_status_btn.click(check_kb_status, inputs=None, outputs=kb_status)
 
 if __name__ == "__main__":
     # Launch Gradio interface
