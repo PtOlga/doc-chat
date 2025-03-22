@@ -221,6 +221,15 @@ def init_models():
     return llm, embeddings
 
 # --------------- Knowledge Base Management ---------------
+def check_url_availability(url: str, headers: dict) -> bool:
+    """Check if URL is accessible"""
+    try:
+        response = requests.head(url, headers=headers, timeout=10)
+        return response.status_code == 200
+    except Exception as e:
+        print(f"URL check failed for {url}: {str(e)}")
+        return False
+
 def build_knowledge_base():
     """Build or update the knowledge base"""
     global vector_store, kb_info
@@ -235,11 +244,25 @@ def build_knowledge_base():
         os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
         
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
         }
+
+        # First check which URLs are accessible
+        available_urls = [url for url in URLS if check_url_availability(url, headers)]
         
-        # Load documents with detailed logging
-        for url in URLS:
+        if not available_urls:
+            raise HTTPException(
+                status_code=500, 
+                detail="None of the provided URLs are accessible. Please check the domain and URLs."
+            )
+
+        print(f"Found {len(available_urls)} accessible URLs out of {len(URLS)}")
+        
+        # Load documents with detailed logging and error handling
+        for url in available_urls:
             try:
                 print(f"Attempting to load {url}")
                 loader = WebBaseLoader(
@@ -253,11 +276,11 @@ def build_knowledge_base():
                 if docs:
                     documents.extend(docs)
                 else:
-                    # Попробуем альтернативный метод загрузки
+                    # Try alternative loading method
                     response = requests.get(url, headers=headers, timeout=30)
                     response.raise_for_status()
                     soup = BeautifulSoup(response.text, 'html.parser')
-                    # Получаем основной контент, исключая навигацию и футер
+                    # Get main content, excluding navigation and footer
                     main_content = ' '.join([p.text for p in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li'])])
                     if main_content:
                         from langchain_core.documents import Document
